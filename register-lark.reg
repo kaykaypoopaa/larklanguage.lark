@@ -1,0 +1,10 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\.lark]
+@="LarkFile"
+
+[HKEY_CLASSES_ROOT\LarkFile]
+@="Lark Script File"
+
+[HKEY_CLASSES_ROOT\LarkFile\shell\open\command]
+@="\"C:\\LarkLanguage\\lark.bat\" \"%1\""
