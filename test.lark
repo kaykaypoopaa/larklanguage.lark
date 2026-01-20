@@ -1,0 +1,19 @@
+# Test program
+import math
+import random
+
+print("=== Lark Test ===")
+
+let x = 5
+let y = 10
+let sum = x + y
+
+print("Sum: " + sum)
+
+let sqrt_val = math.sqrt(16)
+print("Square root of 16: " + sqrt_val)
+
+let rand = random.randint(1, 100)
+print("Random number: " + rand)
+
+print("Test complete!")
