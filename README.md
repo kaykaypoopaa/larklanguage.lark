@@ -8,4 +8,4 @@ If you would like to use this programming language you need to make a folder in 
 
 
 # IMPORTANT
-if you dont have nodejs, you can install it at https://nodejs.org or if you dont feel like it, I'll try to provide a mediafire link or something so you can use the .exe instead of .js
+if you dont have nodejs, you can install it at https://nodejs.org or if you dont feel like it, I have provided a .exe file for it in releases.
