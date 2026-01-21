@@ -1,5 +1,7 @@
+#!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const readlineSync = require('readline-sync');
 
 const builtinModules = {
   math: {
@@ -20,7 +22,15 @@ const builtinModules = {
   random: {
     random: { type: 'NativeFunction', fn: () => Math.random() },
     randint: { type: 'NativeFunction', fn: (min, max) => Math.floor(Math.random() * (max - min + 1)) + min },
-    choice: { type: 'NativeFunction', fn: (str) => str[Math.floor(Math.random() * str.length)] }
+    choice: { type: 'NativeFunction', fn: (str) => str[Math.floor(Math.random() * str.length)] },
+    shuffle: { type: 'NativeFunction', fn: (arr) => {
+      const newArr = [...arr];
+      for (let i = newArr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+      }
+      return newArr;
+    }}
   },
   string: {
     len: { type: 'NativeFunction', fn: (s) => String(s).length },
@@ -29,30 +39,63 @@ const builtinModules = {
     reverse: { type: 'NativeFunction', fn: (s) => String(s).split('').reverse().join('') },
     replace: { type: 'NativeFunction', fn: (s, old, newStr) => String(s).replace(old, newStr) },
     split: { type: 'NativeFunction', fn: (s, delim) => String(s).split(delim) },
+    join: { type: 'NativeFunction', fn: (arr, delim) => arr.join(delim) },
+    startswith: { type: 'NativeFunction', fn: (s, prefix) => String(s).startsWith(prefix) },
+    endswith: { type: 'NativeFunction', fn: (s, suffix) => String(s).endsWith(suffix) },
     substring: { type: 'NativeFunction', fn: (s, start, end) => String(s).substring(start, end) }
   },
   array: {
     create: { type: 'NativeFunction', fn: (...items) => items },
     length: { type: 'NativeFunction', fn: (arr) => arr.length },
+    push: { type: 'NativeFunction', fn: (arr, item) => { arr.push(item); return arr; } },
+    pop: { type: 'NativeFunction', fn: (arr) => arr.pop() },
     sum: { type: 'NativeFunction', fn: (arr) => arr.reduce((a, b) => a + b, 0) },
     avg: { type: 'NativeFunction', fn: (arr) => arr.reduce((a, b) => a + b, 0) / arr.length },
     max: { type: 'NativeFunction', fn: (arr) => Math.max(...arr) },
-    min: { type: 'NativeFunction', fn: (arr) => Math.min(...arr) }
+    min: { type: 'NativeFunction', fn: (arr) => Math.min(...arr) },
+    sort: { type: 'NativeFunction', fn: (arr) => [...arr].sort((a, b) => a - b) },
+    reverse: { type: 'NativeFunction', fn: (arr) => [...arr].reverse() },
+    contains: { type: 'NativeFunction', fn: (arr, item) => arr.includes(item) }
   },
   time: {
     now: { type: 'NativeFunction', fn: () => Date.now() },
+    timestamp: { type: 'NativeFunction', fn: () => Math.floor(Date.now() / 1000) },
     year: { type: 'NativeFunction', fn: () => new Date().getFullYear() },
     month: { type: 'NativeFunction', fn: () => new Date().getMonth() + 1 },
     day: { type: 'NativeFunction', fn: () => new Date().getDate() },
     hour: { type: 'NativeFunction', fn: () => new Date().getHours() },
     minute: { type: 'NativeFunction', fn: () => new Date().getMinutes() },
     second: { type: 'NativeFunction', fn: () => new Date().getSeconds() }
+  },
+  input: {
+    prompt: { 
+      type: 'NativeFunction', 
+      fn: (message) => {
+        return readlineSync.question(String(message));
+      }
+    },
+    number: {
+      type: 'NativeFunction',
+      fn: (message) => {
+        const input = readlineSync.question(String(message));
+        const num = parseFloat(input);
+        return isNaN(num) ? 0 : num;
+      }
+    },
+    int: {
+      type: 'NativeFunction',
+      fn: (message) => {
+        const input = readlineSync.question(String(message));
+        const num = parseInt(input);
+        return isNaN(num) ? 0 : num;
+      }
+    }
   }
 };
 
 function tokenize(source) {
   const tokens = [];
-  const keywords = ['let', 'if', 'then', 'else', 'end', 'while', 'do', 'fun', 'print', 'return', 'import', 'input'];
+  const keywords = ['let', 'if', 'then', 'else', 'end', 'while', 'do', 'fun', 'print', 'return', 'import'];
   const patterns = [
     { type: 'COMMENT', regex: /#.*/ },
     { type: 'NUMBER', regex: /\d+(\.\d+)?/ },
@@ -155,8 +198,6 @@ class Parser {
       } else if (this.match('LPAREN') || this.match('DOT')) {
         this.pos--;
         return { type: 'ExpressionStatement', expression: this.parseExpression() };
-      } else if (this.match('KEYWORD', 'input')) {
-        return this.parseInput();
       }
     }
     
@@ -370,143 +411,4 @@ class Interpreter {
         env[stmt.moduleName] = module;
         break;
       case 'VarDecl':
-        env[stmt.name] = this.evaluate(stmt.value, env, currentFile);
-        break;
-      case 'Assignment':
-        env[stmt.name] = this.evaluate(stmt.value, env, currentFile);
-        break;
-      case 'If':
-        if (this.evaluate(stmt.condition, env, currentFile)) {
-          for (const s of stmt.thenBody) this.execute(s, env, currentFile);
-        } else {
-          for (const s of stmt.elseBody) this.execute(s, env, currentFile);
-        }
-        break;
-      case 'While':
-        while (this.evaluate(stmt.condition, env, currentFile)) {
-          for (const s of stmt.body) this.execute(s, env, currentFile);
-        }
-        break;
-      case 'FunDecl':
-        env[stmt.name] = { type: 'Function', params: stmt.params, body: stmt.body };
-        break;
-      case 'Print':
-        const output = String(this.evaluate(stmt.value, env, currentFile));
-        console.log(output);
-        this.output.push(output);
-        break;
-      case 'ExpressionStatement':
-        this.evaluate(stmt.expression, env, currentFile);
-        break;
-      case 'Return':
-        return { type: 'ReturnValue', value: this.evaluate(stmt.value, env, currentFile) };
-    }
-  }
-
-  evaluate(expr, env, currentFile) {
-    switch (expr.type) {
-      case 'Number':
-        return expr.value;
-      case 'String':
-        return expr.value;
-      case 'Identifier':
-        if (!(expr.name in env)) throw new Error(`Undefined variable: ${expr.name}`);
-        return env[expr.name];
-      case 'ModuleAccess':
-        if (!(expr.module in env)) throw new Error(`Module '${expr.module}' not imported`);
-        const mod = env[expr.module];
-        if (!(expr.member in mod)) throw new Error(`'${expr.member}' not found in module '${expr.module}'`);
-        return mod[expr.member];
-      case 'ModuleCall':
-        if (!(expr.module in env)) throw new Error(`Module '${expr.module}' not imported`);
-        const moduleEnv = env[expr.module];
-        if (!(expr.member in moduleEnv)) throw new Error(`Function '${expr.member}' not found in module '${expr.module}'`);
-        const fn = moduleEnv[expr.member];
-        
-        if (fn.type === 'NativeFunction') {
-          const args = expr.args.map(arg => this.evaluate(arg, env, currentFile));
-          return fn.fn(...args);
-        }
-        
-        if (fn.type !== 'Function') throw new Error(`${expr.member} is not a function`);
-        const localEnv = { ...moduleEnv };
-        for (let i = 0; i < fn.params.length; i++) {
-          localEnv[fn.params[i]] = this.evaluate(expr.args[i], env, currentFile);
-        }
-        for (const stmt of fn.body) {
-          const result = this.execute(stmt, localEnv, currentFile);
-          if (result?.type === 'ReturnValue') return result.value;
-        }
-        return null;
-      case 'Binary':
-        const left = this.evaluate(expr.left, env, currentFile);
-        const right = this.evaluate(expr.right, env, currentFile);
-        switch (expr.op) {
-          case '+': return left + right;
-          case '-': return left - right;
-          case '*': return left * right;
-          case '/': return left / right;
-          case '>': return left > right;
-          case '<': return left < right;
-          case '==': return left === right;
-          case '!=': return left !== right;
-          case '>=': return left >= right;
-          case '<=': return left <= right;
-        }
-        break;
-      case 'Call':
-        const func = env[expr.name];
-        if (!func || func.type !== 'Function') throw new Error(`${expr.name} is not a function`);
-        const callEnv = { ...env };
-        for (let i = 0; i < func.params.length; i++) {
-          callEnv[func.params[i]] = this.evaluate(expr.args[i], env, currentFile);
-        }
-        for (const stmt of func.body) {
-          const result = this.execute(stmt, callEnv, currentFile);
-          if (result?.type === 'ReturnValue') return result.value;
-        }
-        return null;
-    }
-  }
-}
-
-
-const args = process.argv.slice(2);
-if (args.length === 0) {
-  console.log('Lark Programming Language');
-  console.log('Usage: node lark.js <file.lark>');
-  console.log('');
-  console.log('Built-in modules: math, random, string, array, time');
-  process.exit(0);
-}
-
-const filename = args[0];
-if (!fs.existsSync(filename)) {
-  console.error(`Error: File '${filename}' not found`);
-  process.exit(1);
-}
-
-const code = fs.readFileSync(filename, 'utf8');
-const directory = path.dirname(path.resolve(filename));
-
-const fileSystem = {};
-try {
-  const files = fs.readdirSync(directory).filter(f => f.endsWith('.lark'));
-  files.forEach(file => {
-    fileSystem[file] = fs.readFileSync(path.join(directory, file), 'utf8');
-  });
-} catch (err) {
-  console.error(`Error reading directory: ${err.message}`);
-  process.exit(1);
-}
-
-try {
-  const tokens = tokenize(code);
-  const parser = new Parser(tokens);
-  const ast = parser.parse();
-  const interpreter = new Interpreter(fileSystem, builtinModules);
-  interpreter.interpret(ast, path.basename(filename));
-} catch (error) {
-  console.error(`Error: ${error.message}`);
-  process.exit(1);
-}
+        env[stmt.name] = this.evaluate(stmt.value, env,
