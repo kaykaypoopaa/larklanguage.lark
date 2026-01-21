@@ -114,7 +114,6 @@ function tokenize(source) {
   let pos = 0;
   while (pos < source.length) {
     let matched = false;
-    
     for (const { type, regex } of patterns) {
       const match = source.slice(pos).match(new RegExp(`^${regex.source}`));
       if (match) {
@@ -126,12 +125,10 @@ function tokenize(source) {
         break;
       }
     }
-    
     if (!matched) {
       pos++;
     }
   }
-  
   return tokens.filter(t => t.type !== 'NEWLINE');
 }
 
@@ -200,7 +197,6 @@ class Parser {
         return { type: 'ExpressionStatement', expression: this.parseExpression() };
       }
     }
-    
     const token = this.peek();
     throw new Error(`Unexpected token: ${token?.value}`);
   }
@@ -319,11 +315,9 @@ class Parser {
       return { type: 'String', value: val.slice(1, -1) };
     } else if (this.match('IDENTIFIER')) {
       const name = this.consume().value;
-      
       if (this.match('DOT')) {
         this.consume();
         const member = this.expect('IDENTIFIER').value;
-        
         if (this.match('LPAREN')) {
           this.consume();
           const args = [];
@@ -334,10 +328,8 @@ class Parser {
           this.expect('RPAREN');
           return { type: 'ModuleCall', module: name, member, args };
         }
-        
         return { type: 'ModuleAccess', module: name, member };
       }
-      
       if (this.match('LPAREN')) {
         this.consume();
         const args = [];
@@ -379,27 +371,22 @@ class Interpreter {
     if (this.modules[moduleName]) {
       return this.modules[moduleName];
     }
-
     if (this.builtins[moduleName]) {
       this.modules[moduleName] = this.builtins[moduleName];
       return this.builtins[moduleName];
     }
-
     const moduleFile = moduleName + '.lark';
     if (!this.fileSystem[moduleFile]) {
       throw new Error(`Module '${moduleName}' not found. Available built-in modules: ${Object.keys(this.builtins).join(', ')}`);
     }
-
     const moduleCode = this.fileSystem[moduleFile];
     const tokens = tokenize(moduleCode);
     const parser = new Parser(tokens);
     const ast = parser.parse();
-
     const moduleEnv = {};
     for (const stmt of ast.body) {
       this.execute(stmt, moduleEnv, moduleFile);
     }
-
     this.modules[moduleName] = moduleEnv;
     return moduleEnv;
   }
@@ -411,4 +398,140 @@ class Interpreter {
         env[stmt.moduleName] = module;
         break;
       case 'VarDecl':
-        env[stmt.name] = this.evaluate(stmt.value, env,
+        env[stmt.name] = this.evaluate(stmt.value, env, currentFile);
+        break;
+      case 'Assignment':
+        env[stmt.name] = this.evaluate(stmt.value, env, currentFile);
+        break;
+      case 'If':
+        if (this.evaluate(stmt.condition, env, currentFile)) {
+          for (const s of stmt.thenBody) this.execute(s, env, currentFile);
+        } else {
+          for (const s of stmt.elseBody) this.execute(s, env, currentFile);
+        }
+        break;
+      case 'While':
+        while (this.evaluate(stmt.condition, env, currentFile)) {
+          for (const s of stmt.body) this.execute(s, env, currentFile);
+        }
+        break;
+      case 'FunDecl':
+        env[stmt.name] = { type: 'Function', params: stmt.params, body: stmt.body };
+        break;
+      case 'Print':
+        const output = String(this.evaluate(stmt.value, env, currentFile));
+        console.log(output);
+        this.output.push(output);
+        break;
+      case 'ExpressionStatement':
+        this.evaluate(stmt.expression, env, currentFile);
+        break;
+      case 'Return':
+        return { type: 'ReturnValue', value: this.evaluate(stmt.value, env, currentFile) };
+    }
+  }
+
+  evaluate(expr, env, currentFile) {
+    switch (expr.type) {
+      case 'Number':
+        return expr.value;
+      case 'String':
+        return expr.value;
+      case 'Identifier':
+        if (!(expr.name in env)) throw new Error(`Undefined variable: ${expr.name}`);
+        return env[expr.name];
+      case 'ModuleAccess':
+        if (!(expr.module in env)) throw new Error(`Module '${expr.module}' not imported`);
+        const mod = env[expr.module];
+        if (!(expr.member in mod)) throw new Error(`'${expr.member}' not found in module '${expr.module}'`);
+        return mod[expr.member];
+      case 'ModuleCall':
+        if (!(expr.module in env)) throw new Error(`Module '${expr.module}' not imported`);
+        const moduleEnv = env[expr.module];
+        if (!(expr.member in moduleEnv)) throw new Error(`Function '${expr.member}' not found in module '${expr.module}'`);
+        const fn = moduleEnv[expr.member];
+        if (fn.type === 'NativeFunction') {
+          const args = expr.args.map(arg => this.evaluate(arg, env, currentFile));
+          return fn.fn(...args);
+        }
+        if (fn.type !== 'Function') throw new Error(`${expr.member} is not a function`);
+        const localEnv = { ...moduleEnv };
+        for (let i = 0; i < fn.params.length; i++) {
+          localEnv[fn.params[i]] = this.evaluate(expr.args[i], env, currentFile);
+        }
+        for (const stmt of fn.body) {
+          const result = this.execute(stmt, localEnv, currentFile);
+          if (result?.type === 'ReturnValue') return result.value;
+        }
+        return null;
+      case 'Binary':
+        const left = this.evaluate(expr.left, env, currentFile);
+        const right = this.evaluate(expr.right, env, currentFile);
+        switch (expr.op) {
+          case '+': return left + right;
+          case '-': return left - right;
+          case '*': return left * right;
+          case '/': return left / right;
+          case '>': return left > right;
+          case '<': return left < right;
+          case '==': return left === right;
+          case '!=': return left !== right;
+          case '>=': return left >= right;
+          case '<=': return left <= right;
+        }
+        break;
+      case 'Call':
+        const func = env[expr.name];
+        if (!func || func.type !== 'Function') throw new Error(`${expr.name} is not a function`);
+        const callEnv = { ...env };
+        for (let i = 0; i < func.params.length; i++) {
+          callEnv[func.params[i]] = this.evaluate(expr.args[i], env, currentFile);
+        }
+        for (const stmt of func.body) {
+          const result = this.execute(stmt, callEnv, currentFile);
+          if (result?.type === 'ReturnValue') return result.value;
+        }
+        return null;
+    }
+  }
+}
+
+const args = process.argv.slice(2);
+if (args.length === 0) {
+  console.log('Lark Programming Language v1.1');
+  console.log('Usage: lark <file.lark>');
+  console.log('');
+  console.log('Built-in modules: math, random, string, array, time, input');
+  process.exit(0);
+}
+
+const filename = args[0];
+if (!fs.existsSync(filename)) {
+  console.error(`Error: File '${filename}' not found`);
+  process.exit(1);
+}
+
+const code = fs.readFileSync(filename, 'utf8');
+const directory = path.dirname(path.resolve(filename));
+
+const fileSystem = {};
+try {
+  const files = fs.readdirSync(directory).filter(f => f.endsWith('.lark'));
+  files.forEach(file => {
+    fileSystem[file] = fs.readFileSync(path.join(directory, file), 'utf8');
+  });
+} catch (err) {
+  console.error(`Error reading directory: ${err.message}`);
+  process.exit(1);
+}
+
+try {
+  const tokens = tokenize(code);
+  const parser = new Parser(tokens);
+  const ast = parser.parse();
+  const interpreter = new Interpreter(fileSystem, builtinModules);
+  interpreter.interpret(ast, path.basename(filename));
+} catch (error) {
+  console.error(`Error: ${error.message}`);
+  process.exit(1);
+}
