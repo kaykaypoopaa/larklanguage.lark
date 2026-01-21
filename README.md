@@ -9,7 +9,7 @@ A simple, standalone programming language with built-in modules - **no Node.js i
 
 **[Download Lark.exe](https://github.com/kaykaypoopaa/larklanguage.lark/releases/latest)**
 
-No dependencies needed - just download, install, and start coding!
+No dependencies needed - just download, register, and start coding!
 
 ## ✨ Features
 
