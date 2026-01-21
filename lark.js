@@ -52,7 +52,7 @@ const builtinModules = {
 
 function tokenize(source) {
   const tokens = [];
-  const keywords = ['let', 'if', 'then', 'else', 'end', 'while', 'do', 'fun', 'print', 'return', 'import'];
+  const keywords = ['let', 'if', 'then', 'else', 'end', 'while', 'do', 'fun', 'print', 'return', 'import', 'input'];
   const patterns = [
     { type: 'COMMENT', regex: /#.*/ },
     { type: 'NUMBER', regex: /\d+(\.\d+)?/ },
@@ -155,6 +155,8 @@ class Parser {
       } else if (this.match('LPAREN') || this.match('DOT')) {
         this.pos--;
         return { type: 'ExpressionStatement', expression: this.parseExpression() };
+      } else if (this.match('KEYWORD', 'input')) {
+        return this.parseInput();
       }
     }
     
